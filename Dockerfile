@@ -1,44 +1,46 @@
 # written by Benoit Sarda
-# hashicorp Vault container that uses a simple file backend.
+# ejbca container. uses bsarda/jboss by copy/paste.
 #
 #   bsarda <b.sarda@free.fr>
 #
-FROM alpine:latest
+#FROM centos:centos7.2.1511
+#FROM centos:7
+FROM debian:latest
 LABEL maintainer "b.sarda@free.fr"
 
-# variables for certificate
-ENV ENABLE_SSL=true \
-    SSL_COUNTRY=FR \
-    SSL_STATE=IDF \
-    SSL_LOCALITY=Paris \
-    SSL_ORG=Company \
-    SSL_OU=IT
+# expose
+EXPOSE 8443
 
-ARG ver=0.7.3
-# july 2017 version!!
+# declare vars
+ENV DB_SERVER=192.168.63.5 \
+		DB_PORT=5432 \
+		DB_NAME=netbox \
+		DB_USER=netbox \
+		DB_PASSWORD=P@ssw0rd! \
+		SU_NAME=admin \
+		SU_MAIL=admin@localhost \
+		SU_PASSWORD=P@ssw0rd! \
+		SSL_COUNTRY=FR \
+		SSL_STATE=IDF \
+		SSL_CITY=Paris \
+		SSL_ORG=Lab
+COPY ["init.sh", "stop.sh", \
+			"/usr/local/bin/"]
 
-EXPOSE 8200 8201
+RUN	chmod 750 /usr/local/bin/init.sh && chmod 750 /usr/local/bin/stop.sh
 
-# add files
-ADD ["init.sh","stop.sh","/usr/local/bin/"]
+RUN mkdir /var/netbox -p && \
+		apt-get update && \
+		apt-get install -y python3 python3-dev python3-pip && \
+		apt-get install -y libpng-dev libjpeg-dev libxml2-dev libxslt1-dev libffi-dev graphviz libpq-dev libssl-dev zlib1g-dev && \
+		apt-get install -y gcc musl-dev curl git && \
+		apt-get install -y apache2 libapache2-mod-wsgi-py3 && \
+		apache2ctl stop && \
+		update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
-RUN mkdir /data && mkdir /var/local/vault -p && apk --update add wget openssl ca-certificates && \
-    openssl req -x509 -newkey rsa:4096 -sha256 -nodes -keyout /var/local/vault/key.pem -out /var/local/vault/cert.pem -days 3650 -subj "/C=$SSL_COUNTRY/ST=$SSL_STATE/L=$SSL_LOCALITY/O=$SSL_ORG/OU=$SSL_OU/CN=localhost" && \
-    chmod 750 /usr/local/bin/init.sh && chmod 750 /usr/local/bin/stop.sh && \
-    wget https://releases.hashicorp.com/vault/${ver}/vault_${ver}_linux_amd64.zip -P /tmp && unzip /tmp/vault_${ver}_linux_amd64.zip -d /bin && rm /tmp/vault_${ver}_linux_amd64.zip && \
-    echo 'storage "file" {' > /var/local/vault/vault.conf && \
-    echo '  path = "/data/vaultdata"' >> /var/local/vault/vault.conf && \
-    echo '}' >> /var/local/vault/vault.conf && \
-    echo 'listener "tcp" {' >> /var/local/vault/vault.conf && \
-    echo '  address = "0.0.0.0:8200"' >> /var/local/vault/vault.conf && \
-    echo '  tls_disable = 0' >> /var/local/vault/vault.conf && \
-    echo '  tls_cert_file = "/data/cert.pem"' >> /var/local/vault/vault.conf && \
-    echo '  tls_key_file = "/data/key.pem"' >> /var/local/vault/vault.conf && \
-    echo '  tls_require_and_verify_client_cert = "false"' >> /var/local/vault/vault.conf && \
-    echo '}' >> /var/local/vault/vault.conf && \
-    echo 'disable_mlock = false' >> /var/local/vault/vault.conf
+RUN git clone -b master https://github.com/digitalocean/netbox.git /var/netbox && \
+		cd /var/netbox && pip3 install -r requirements.txt && \
+		pip3 install pytz pyasn1 bcrypt libnacl PyNaCl coreapi openapi_codec simplejson ConfigParser gunicorn && \
+		cp /var/netbox/netbox/netbox/configuration.example.py /var/netbox/netbox/netbox/configuration.py
 
-VOLUME "/data"
-
-# default
 CMD ["/usr/local/bin/init.sh"]
